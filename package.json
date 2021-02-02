@@ -1,0 +1,23 @@
+{
+  "name": "decentralized-exchange",
+  "version": "1.0.0",
+  "description": "a custom decentralized erc20 token",
+  "main": "truffle-config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/damivazbien/decentralized-exchange.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/damivazbien/decentralized-exchange/issues"
+  },
+  "homepage": "https://github.com/damivazbien/decentralized-exchange#readme"
+}
