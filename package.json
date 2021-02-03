@@ -19,5 +19,22 @@
   "bugs": {
     "url": "https://github.com/damivazbien/decentralized-exchange/issues"
   },
-  "homepage": "https://github.com/damivazbien/decentralized-exchange#readme"
+  "homepage": "https://github.com/damivazbien/decentralized-exchange#readme",
+  "dependencies": {
+    "@babel/core": "^7.12.10",
+    "@babel/preset-env": "^7.12.11",
+    "@babel/preset-react": "^7.12.13",
+    "babel-loader": "^8.2.2",
+    "babel-polyfill": "^6.26.0",
+    "css-loader": "^5.0.1",
+    "html-loader": "^1.3.2",
+    "html-webpack-plugin": "^4.5.1",
+    "react": "^17.0.1",
+    "react-dom": "^17.0.1",
+    "style-loader": "^2.0.0",
+    "stylus": "^0.54.8",
+    "stylus-loader": "^5.0.0",
+    "webpack": "^5.20.0",
+    "webpack-cli": "^4.5.0"
+  }
 }
