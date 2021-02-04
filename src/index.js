@@ -53,3 +53,5 @@ class Sidebar extends React.Component {
                 )
     }
 }
+
+ReactDOM.render(<Main />, document.querySelector('#root'))

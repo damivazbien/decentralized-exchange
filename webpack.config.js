@@ -22,18 +22,16 @@ module.exports = {
                 use: {
                     loader: 'html-loader'
                 }
-            },
-            {
+            }, {
                 test: /\.styl$/,
                 exclude: /node_modules/,
-                use: ['style-loader', 'css-loader','stylus-loader']
+                use: ['style-loader', 'css-loader', 'stylus-loader']
             }
         ]
     },
-    
     plugins: [
         new html({
-            title: "dApp project",
+            title: "Decentralized Exchange",
             template: './src/index.ejs',
             hash: true
         })
