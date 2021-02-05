@@ -2,17 +2,53 @@ import React from 'react'
 import ReactDOM from 'react-dom'
 import './index.styl'
 
-class Main extends React.Component {
-    constructor () {
-        super();
+// The main section to see live trades taking place
+class Trades extends React.Component {
+    constructor(){
+        super()
     }
 
     render() {
+        let buyTrades = this.props.trades.filter(trade => trade.type == 'buy')
+
+        buyTrades = buyTrades.map((trade, index) => (
+            <div key={trade.id + index} className="trade-container buy-trade">
+                <div className="trade-symbol">
+                    {trade.firstSymbol}
+                </div>
+                <div className="trade-symbol">
+                    {trade.secondSymbol}
+                </div>
+                <div className="trade-pricing">
+                    {trade.type} {trade.firstSymbol} at {trade.price} each
+                </div>
+            </div>
+        ));
+
+        let sellTrades = this.props.trades.filter(trade => trade.type == 'sell')
+            sellTrades = sellTrades.map((trade, index) => (
+                <div key={trade.id + index} className="trade-container sell-trade">
+                    <div className="trade-symbol">
+                        {trade.firstSymbol}
+                    </div>
+                    <div className="trade-symbol">
+                        {trade.secondSymbol}
+                    </div>
+                    <div className="trade-pricing">
+                    {trade.type} {trade.firstSymbol} at {trade.price} each
+                </div>
+            </div>
+        ));
+        
         return (
-            <div>
-                <Sidebar/>
+            <div className="trades">
+                <div className="buy-trades-title heading">Buy</div>
+                <div className="buy-trades-container">{buyTrades}</div>
+                <div className="sell-trades-title">Sell</div>
+                <div className="sell-trades-title">{sellTrades}</div>
             </div>
         )
+
     }
 }
 
@@ -51,6 +87,91 @@ class Sidebar extends React.Component {
                     <input ref="limit-order-amount" className={ this.state.showLimitOrderInput? '' : 'hidden'} type="number" placeholder="Price to buy or sell at..."/>
                 </div>
                 )
+    }
+}
+
+// Past historical trades
+class History extends React.Component{
+    constructor(){
+        super()
+    }
+
+    render() {
+        const historicalTrades = this.props.history.map((trade, index) => (<div key={trade.id + index} className="historical-trade">
+            <div className={trade.type == 'sell' ? 'sell-trade' : 'buy-trade'}>
+                {trade.type} {trade.quantity} {trade.firstSymbol} for {trade.quantity * trade.price} {trade.secondSymbol} at {trade.price} each
+            </div>
+        </div>))
+    
+
+    return (
+        <div className="history">
+            <div className="heading">Recent history</div>
+            <div className="historical-trades-container">{historicalTrades}</div>
+        </div>
+    )
+    }
+}
+
+
+class Main extends React.Component {
+    constructor () {
+        super()
+
+        this.state = {
+            trades: [
+                {
+                    id: 123,
+                    type: 'buy',
+                    firstSymbol: 'ETH',
+                    secondSymbol: 'BAT',
+                    quantity: 120, // You want to buy 120 firstSymbol
+                    price : 200 // When buying, you get 1 firstSymbol
+                },
+                {
+                    id: 123,
+                    type: 'sell',
+                    firstSymbol: 'ETH',
+                    secondSymbol: 'BAT',
+                    quantity: 80, // You want to buy 80 secondSymbol
+                    price: 305 // When selling, you get 305 secondSymbol for selling 1 firstSymbol
+                }],
+            history: [
+                {
+                    id: 927,
+                    type: 'buy',
+                    firstSymbol: 'ETH',
+                    secondSymbol: 'BAT',
+                    quantity: 2,
+                    price: 20
+                },
+                {
+                    id: 927,
+                    type: 'sell',
+                    firstSymbol: 'ETH',
+                    secondSymbol: 'BAT',
+                    quantity: 2, // You want to buy 80 secondSymbol
+                    price: 10 // When selling, you get 305 secondSYmbol for selling 1 firstSymbol
+                }
+            ]
+        }
+    }
+
+    
+    
+
+    render() {
+        return (
+            <div className="main-container">
+                <Sidebar/>
+                <Trades 
+                    trades={this.state.trades}
+                />
+                <History    
+                    history={this.state.history}
+                />
+            </div>
+        )
     }
 }
 
