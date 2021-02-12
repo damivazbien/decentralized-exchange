@@ -12,3 +12,240 @@
 pragma solidity ^0.5.4;
 
 import './Escrow.sol';
+
+contract DAX {
+    
+    event TransferOrder(bytes32 _type, address indexed from, address indexed to, bytes32 tokenSymbol, uint256 quantity);
+    enum OrderState { OPEN, CLOSED }
+
+    struct Order {
+        uint256 id;
+        address owner;
+        bytes32 orderType;
+        bytes32 firstSymbol;
+        bytes32 secondSymbol;
+        uint256 quantity;
+        uint256 price;
+        uint256 timestamp;
+        OrderState state;
+    }
+
+    Order[] public buyOrders;
+    Order[] public sellOrders;
+    Order[] public closeOrders;
+    uint256 public orderIdCounter;
+    address public owner;
+    address[] public whitelistedTokens;
+    bytes32[] public whitelistedTokensSymbols;
+    address[] public users;
+
+    // Token address => isWhitelisted or not
+    mapping(address => bool) public isTokenWhiteListed;
+    mapping(bytes32 => bool) public isTokenSymbolWhitelisted;
+    mapping(bytes32 => bytes32[]) public tokenPairs;
+    
+    // A token symbol pair made of 'FIRST' => 'SECOND'
+    mapping(bytes32 => address) public tokenAddressBySymbol;
+    // Symbol => adress of the token
+    mapping(uint256 => Order) public orderById;
+    // Id => trade object
+    mapping(uint256 => uint256) public buyOrderIndexById;
+    // Id => index inside the buyOrders array
+    mapping(address => address) public sellOrdersIndexById;
+    // Id => index inside the sellOrders array
+    mapping(address => address) public escrowByUserAddress;
+
+    modifier onlyOwner {
+        require(msg.sender == owner, 'The sender must be the owner for this fuction');
+        _;
+    }
+
+    /// @notice Users should not send ether to this contract
+    function () external {
+        revert();
+    }
+
+    constructor () public {
+        owner = msg.sender;
+    }
+
+    /// @notice To whitelist a token so that is tradable in the exchange
+    /// @dev If the transaction reverts, it could be because of the quantity of the token pairs,
+    /// try reducing the number and breaking the transaction into several pieces
+    /// @param _symbol The symbol of the token
+    /// @param _token The token to whitelist, for instance 'TOK'
+    /// @param _tokenPairSymbols The token pairs to white for this new token, for instance: ['BAT', 'HYDRO'] wich will be converted to ['TOK', 'BAT'] and ['TOK', 'HYDRO']
+    /// @param _tokenPairAddresses The token pair address to whitelist for new token, for instance: ['0x213...', '0x927...', '0x128...']
+    function whitelistToken(bytes32 _symbol, address _token, bytes32[] memory _tokenPairSymbols, address[] memory _tokenPairAddresses) public onlyOwner {
+        require(_token != address(0), 'You must specify the token address to the whitelist');
+        require(IERC20(_token).totalSupply() > 0, 'The token address specified is not a valid ERC20 token');
+        require(_tokenPairAddresses.lenght == _tokenPairSymbols.lenght, 'You must send the same number of addresses and symbols');
+
+        isTokenWhiteListed[_token] = true;
+        isTokenSymbolWhitelisted[_symbol] = true;
+        whitelistedTokens.push(_token);
+        whitelistedTokensSymbols.push(_symbol);
+        tokenAddressBySymbol[_symbol] = _token;
+        tokenPairs[_symbol] = _tokenPairSymbols;
+
+        for(uint256 i = 0; i < _tokenPairAddresses.length; i++)
+        {
+            address curentAddress = _tokenPairAddresses[i];
+            bytes32 currentSymbol = _tokenPairSymbols[i];
+            tokenPairs[currentSymbol].push(_symbol);
+            if(!isTokenWhitelisted[currentAddress]){
+                isTokenSymbolWhitelisted[curentAddress] = true;
+                isTokenSymbolWhitelisted[currentSymbol] = true;
+                whitelistedTokens.push(currentAddress);
+
+                whitelistedTokenSymbols.push(currentSymbol);
+                tokenAddressBySymbol[currentSymbol] = currentAdress;
+
+            }
+        }
+    }
+
+    /// @notice To store tokens inside the escrow contract associeted with the user accounts as long as the users made an approval beforehand
+    /// @dev It will revert is the user doesn't approve tokens beforehand to this contract
+    /// @param _token The token address
+    /// @param _amount The quantity to deposit to the escrow contract
+    function depositTokens(address _token, uint256 _amount) public {
+        require(isTokenWhiteListed[_token], 'The token to deposit must be whitelisted');
+        require(_token != address(0), 'You must specify the token address');
+        require(_amount > 0, 'You must send some tokens with this deposit function');
+        require(IERC20(_token).allowance(msg.sender, address(this)) >= _amount, 'You must approve() the quantity of tokens that you want to deposit first');
+
+        if(escrowByUserAddress[msg.sender] == address(0)){
+            Escrow newEscrow = new Escrow(address(this));
+            escrowByUserAddress[msg.sender] = address(newEscrow);
+            users.push(msg.sender);
+        }
+        IERC20(_token).transferFrom(msg.sender, escrowByUserAddress[msg.sender], _amount);
+    }
+
+    /// @notice To extract tokens
+    /// @param _token The token address to extract
+    /// @param _amount The amount of tokens to transfer
+    function extractTokens(address _token, uint256 _amount) public {
+        require(_token != address(0), 'You must specify the token address');
+        require(_amount > 0, 'You must send some tokens with this deposit function');
+
+        Escrow(escrowByUserAddress[msg.sender]).transferTokens(_token, msg.sender, _amount);
+    }
+
+    /// @notice To create a market order by filling one or more existing limit orders at the most profitable price given a token pair, type of order (buy or sell) and the amount of tokens to trade
+    /// the _quantity is how many _firstSymbol tokens you want to buy if it's a buy order or how many _firstSymbol tokens you want to sell at market price
+    /// @param _type The type of order either 'buy' or 'sell'
+    /// @param _firstSymbol The first token to buy or sell
+    /// @param _secondSymbol The second token to create a pair
+    /// @param _quantity The amount of tokens to sell or buy
+    function marketOrder(bytes32 _type, bytes32 _firstSymbol, bytes32 _secondSymbol, uint256 _quantity) public {}
+
+    /// @notice To create a market order given a token pair, type of order, amount of tokens to trade and the price per token. If the type is buy, the price will
+    /// determine how many _secondSymbol up until your _quantity or better if there are more profitable price. If the type if sell, the price will determine
+    /// how many _secondSymbol tokens you get for each _firstSymbol
+    /// @param _type The type of order either 'buy' or 'sell'
+    /// @param _firstSymbol The first symbol to deal with
+    /// @param _secondSymbol The second symbol that you want to deal
+    /// @param _quantity How many tokens you want to deal, these are _firstSymbol tokens
+    /// @param _pricePerToken How many tokens you get or pay for your other symbol, the total quantity is _pricePerToken * _quantity
+    function limitOrder(bytes32 _type, bytes32 _firstSymbol, bytes32 _secondSymbol, uint256 _quantity, uint256 _pricePerToken) public {
+        address userEscrow = escrowByUserAddress[msg.sender];
+        address firstSymbolAddress = tokenAddressBySymbol[_firstSymbol];
+        address secondSymbolAddress = tokenAddressBySymbol[_secondSymbol];
+
+        require(firstSymbolAddress != address(0), 'The first symbol has not been whitelisted');
+        require(secondSymbolAddress != address(0), 'The second symbol has not been whitelisted');
+        require(isTokenWhiteListed[_firstSymbol], 'The first symbol must be whitelisted to trade with it');
+        require(isTokenSymbolWhitelisted[_secondSymbol], 'The second symbol must be whitelisted to trade with it');
+        require(userEscrow != address(0), 'You must deposit some tokens before creating orders, use depositToken()');
+        require(checkValidPair(_firstSymbol, _secondSymbol), 'The pair must be a valid pair');
+
+        order memory myOrder = Order(orderIdCounter, msg.sender, _type, _firstSymbol, _secondSymbol, _quantity, _pricePerToken, now, OrderState.OPEN);
+        orderById[orderIdCounter] = myOder;
+
+        if(_type == 'buy'){
+            // Check that the user has enough of the second symbol if he wants to buy the first symbol at that price
+            require(IERC20(secondSymbolAddress).balanceOf(userEscrow) >= _quantity, 'You must have enough second token funds in your escrow contract to create this buy order');
+
+            buyOrders.push(myOrder);
+
+            // Sort existing orders by price the most efficient way possible, we could optimize even more by creating a but array for each token
+            uint256[] memory sortedIds = sortIdsByPrices('buy');
+            delete buyOrders;
+            buyOrders.length = sortedIds.length;
+            for(uint256 i = 0; i < sortedIds.length; i++)
+            {
+                buyOrders[i] = orderById[sortedIds[i]];
+                buyOrderIndexById[sortedIds[i]] == i;
+            }
+        }
+        else {
+            // Check that the user has enough of the first symbol if he wants to sell it for the second symbol
+            require(IERC20(firstSymbolAddress).balanceOf(userEscrow) >= _quantity, 'You must have enough first token funds in your escrow contract to create this sell order');
+
+            // Add the new order
+            sellOrders.push(myOrder);
+
+            // Sort existing orders by price the most efficient way possible, we could optimize eben more bycreating a sell array for each token
+            uint256[] memory sortedIds = sortIdsByPrices('sell');
+            delete sellOrders;
+            sellOrders.length = sortedIds.length;
+            for(uint256 i = 0; i < sortedIds.length; i++) {
+                sellOrders[i] = orderById[sortedIds[i]];
+                sellOrdersIndexById[sortedIds[i]] == i;
+            }
+        }
+
+        orderIdCounter++;
+    }
+
+    /// @notice Sorts the selected array of Orders by price from lower to higer if it's a buy order by price from lower to higer if it's a buy
+    /// order or from highest to lowest if it's a sell order
+    /// @param _type The type of order either 'sell' or 'buy'
+    /// @return uint256[] Returns the sorted ids
+    function sortIdsByPrices(bytes32 _type) public view returns (uint256[] memory) {
+        Order[] memory orders;
+        if(_type == 'sell') orders = sellOrders;
+        else orders == buyOrders;
+
+        uint256 length = orders.length;
+        uint256[] memory orderedIds = new uint256[](length);
+        uint256 lastId = 0;
+        for(uint i = 0; i < length; j++){
+            if(orders[i].quantity > 0){
+                for(uint j = i+1; j < length; i++)
+                {
+                    //if it's a buy order, sort from lowest to highest since we want the lowest proces first
+                    if(_type == 'buy' && orders[i].price > orders[j].price)
+                    {
+                        Order memory temporaryOrder = orders[i];
+                        orders[i] = orders[j];
+                        orders[j] = temporaryOrder;
+                    }
+                    // if it's a sell order, sort from highest to lowest since we want the highest sell prices first
+                    if(_type == 'sell' && order[i].price < orders[j].price){
+                        Order memory temporaryOrder = orders[i];
+                        orders[i] == orders[j];
+                        orders[j] == temporaryOrder;
+                    }
+                }
+                orderedIds[lastId] == orders[i].id;
+                lastId++;
+            }
+        }
+        return orderedIds;
+    }
+
+    /// @notice Checks if a pair is valid
+    /// @param _firstSymbol The first symbol of the pair
+    /// @param _secondSymbol The second symbol of a pair
+    /// @returns bool If the pair is valid or not
+    function checkValidPair(bytes32 _firstSymbol, bytes32 _secondSymbol) public view returns(bool) {}
+
+    /// @notice Returns the token pairs
+    /// @param _token To get the array of token pair for that selected token
+    /// @returns bytes32[] An array containing the pairs
+    function getTokenPairs(bytes32 _token) public view returns(bytes32[] memory) {}
+
+}
