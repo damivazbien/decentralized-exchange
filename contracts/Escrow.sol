@@ -33,7 +33,7 @@ contract Escrow {
     /// @param _token The address of the token to transfer
     /// @param _to The address of the receiver
     /// @param _amount The amount of tokens to transfer
-    function tranferTokens(address _token, address _to, uint256 _amount) public onlyOwner {
+    function transferTokens(address _token, address _to, uint256 _amount) public onlyOwner {
         require(_token != address(0), 'The token address must be set');
         require(_to != address(0), 'The receiver address must be set');
         require(_amount > 0, 'You must specify the amount of tokens to transfer');
@@ -43,7 +43,7 @@ contract Escrow {
     /// @notice To see how many of a particular token this contract contains
     /// @param _token The address of the token to check
     /// @return uint256 The number of tokens this contract contains
-    function checkTokenBalance(address _token) public view returns(uint256)
+    function checkTokenBalance(address _token) public view returns(uint256){
         require(_token != address(0), 'The token address must be set');
 
         return IERC20(_token).balanceOf(address(this));        

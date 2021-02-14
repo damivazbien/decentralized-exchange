@@ -36,11 +36,11 @@ contract DAX {
     uint256 public orderIdCounter;
     address public owner;
     address[] public whitelistedTokens;
-    bytes32[] public whitelistedTokensSymbols;
+    bytes32[] public whitelistedTokenSymbols;
     address[] public users;
 
     // Token address => isWhitelisted or not
-    mapping(address => bool) public isTokenWhiteListed;
+    mapping(address => bool) public isTokenWhitelisted;
     mapping(bytes32 => bool) public isTokenSymbolWhitelisted;
     mapping(bytes32 => bytes32[]) public tokenPairs;
     
@@ -79,27 +79,27 @@ contract DAX {
     function whitelistToken(bytes32 _symbol, address _token, bytes32[] memory _tokenPairSymbols, address[] memory _tokenPairAddresses) public onlyOwner {
         require(_token != address(0), 'You must specify the token address to the whitelist');
         require(IERC20(_token).totalSupply() > 0, 'The token address specified is not a valid ERC20 token');
-        require(_tokenPairAddresses.lenght == _tokenPairSymbols.lenght, 'You must send the same number of addresses and symbols');
+        require(_tokenPairAddresses.length == _tokenPairSymbols.length, 'You must send the same number of addresses and symbols');
 
-        isTokenWhiteListed[_token] = true;
+        isTokenWhitelisted[_token] = true;
         isTokenSymbolWhitelisted[_symbol] = true;
         whitelistedTokens.push(_token);
-        whitelistedTokensSymbols.push(_symbol);
+        whitelistedTokenSymbols.push(_symbol);
         tokenAddressBySymbol[_symbol] = _token;
         tokenPairs[_symbol] = _tokenPairSymbols;
 
         for(uint256 i = 0; i < _tokenPairAddresses.length; i++)
         {
-            address curentAddress = _tokenPairAddresses[i];
+            address currentAddress = _tokenPairAddresses[i];
             bytes32 currentSymbol = _tokenPairSymbols[i];
             tokenPairs[currentSymbol].push(_symbol);
             if(!isTokenWhitelisted[currentAddress]){
-                isTokenSymbolWhitelisted[curentAddress] = true;
+                isTokenWhitelisted[currentAddress] = true;
                 isTokenSymbolWhitelisted[currentSymbol] = true;
                 whitelistedTokens.push(currentAddress);
 
                 whitelistedTokenSymbols.push(currentSymbol);
-                tokenAddressBySymbol[currentSymbol] = currentAdress;
+                tokenAddressBySymbol[currentSymbol] = currentAddress;
 
             }
         }
@@ -110,7 +110,7 @@ contract DAX {
     /// @param _token The token address
     /// @param _amount The quantity to deposit to the escrow contract
     function depositTokens(address _token, uint256 _amount) public {
-        require(isTokenWhiteListed[_token], 'The token to deposit must be whitelisted');
+        require(isTokenWhitelisted[_token], 'The token to deposit must be whitelisted');
         require(_token != address(0), 'You must specify the token address');
         require(_amount > 0, 'You must send some tokens with this deposit function');
         require(IERC20(_token).allowance(msg.sender, address(this)) >= _amount, 'You must approve() the quantity of tokens that you want to deposit first');
@@ -139,7 +139,88 @@ contract DAX {
     /// @param _firstSymbol The first token to buy or sell
     /// @param _secondSymbol The second token to create a pair
     /// @param _quantity The amount of tokens to sell or buy
-    function marketOrder(bytes32 _type, bytes32 _firstSymbol, bytes32 _secondSymbol, uint256 _quantity) public {}
+    function marketOrder(bytes32 _type, bytes32 _firstSymbol, bytes32 _secondSymbol, uint256 _quantity) public {
+        require(_type.length > 0, 'You must specify the type');
+        require(isTokenSymbolWhitelisted[_firstSymbol], 'The first symbol must be whitelisted');
+        require(isTokenSymbolWhitelisted[_secondSymbol], 'The second symbol must be whitelisted');
+        require(_quantity > 0, 'You must specify the quantity to buy or sell');
+        require(checkValidPair(_firstSymbol, _secondSymbol), 'The pair must be a valid pair');
+
+        // Fills the latest market orders up until the _quantity is reached
+        uint256[] memory ordersToFillIds;
+        uint256[] memory quantitiesToFillPerOrder;
+        uint256 currentQuantity = 0;
+
+        if(_type == 'buy'){
+            ordersToFillIds = new uint256[](sellOrders.length);
+            quantitiesToFillPerOrder = new uint256[](sellOrders.length);
+            // loop through all the sell orders until we fill the quantity
+            for(uint256 i = 0; i < sellOrders.length; i++)
+            {
+                ordersToFillIds[i] = sellOrders[i].id;
+                if((currentQuantity + sellOrders[i].quantity) > _quantity){
+                    quantitiesToFillPerOrder[i] = _quantity - currentQuantity;
+                    break;
+                }
+                currentQuantity += sellOrders[i].quantity;
+                quantitiesToFillPerOrder[i] = sellOrders[i].quantity;
+            }
+        }
+        else
+        {
+            ordersToFillIds = new uint256[](buyOrders.length);
+            quantitiesToFillPerOrder = new uint256[](buyOrders.length);
+            for(uint256 i = 0; i < buyOrders.length; i++)
+            {
+                ordersToFillIds[i] = buyOrders[i].id;
+                if((currentQuantity + buyOrders[i].quantity) > _quantity)
+                {
+                    quantitiesToFillPerOrder[i] = _quantity - currentQuantity;
+                    break;
+                }
+                currentQuantity += buyOrders[i].quantity;
+                quantitiesToFillPerOrder[i] = buyOrders[i].quantity; 
+            }
+        }
+
+        // When the nyOrder.type == buy or _type == sell
+        // myOrder.owner send quantityToFill[] * myOwner.price of _secondSymbol to msg.sender
+        // msg.sender send quantityToFill[] of _firstSymbol to myOrder.owner
+        // Close and fill orders
+        for(uint256 i = 0; i < ordersToFillIds.length; i++)
+        {
+            Order memory myOrder = orderById[ordersToFillIds[i]];
+            // If we fill the entire order, mark it as closed
+            if(quantitiesToFillPerOrder[i] == myOrder.quantity){
+                myOrder.state = OrderState.CLOSED;
+                closeOrders.push(myOrder);
+            }
+            myOrder.quantity -= quantitiesToFillPerOrder[i];
+            orderById[myOrder.id] = myOrder;
+
+            if(_type == 'buy')
+            {
+                // If the limit order is a buy order, send the firstSymbol to the creator of the limit order which is the buyer
+                Escrow(escrowByUserAddress[myOrder.owner]).transferTokens(tokenAddressBySymbol[_firstSymbol], msg.sender, quantitiesToFillPerOrder[i] * myOrder.price);
+                Escrow(escrowByUserAddress[msg.sender]).transferTokens(tokenAddressBySymbol[_secondSymbol], myOrder.owner, quantitiesToFillPerOrder[i] * myOrder.price);
+                
+                sellOrders[sellOrdersIndexById[myOrder.id]] = myOrder;
+
+                emit TransferOrder('sell', escrowByUserAddress[myOrder.owner], msg.sender, _firstSymbol, quantitiesToFillPerOrder[i] * myOrder.price);
+            }
+            else
+            {
+                // If this is a buy market order or a sell limit order for the opposite, send firstSymbol to the second user
+                Escrow(escrowByUserAddress[myOrder.owner]).transferTokens(tokenAddressBySymbol[_secondSymbol], msg.sender, quantitiesToFillPerOrder[i] * myOrder.price);
+
+                Escrow(escrowByUserAddress[msg.sender]).transferTokens(tokenAddressBySymbol[_firstSymbol], myOrder.owner, quantitiesToFillPerOrder[i]);
+                buyOrders[buyOrderIndexById[myOrder.id]] = myOrder;
+
+                emit TransferOrder('buy', escrowByUserAddress[myOrder.owner], msg.sender, _secondSymbol, quantitiesToFillPerOrder[i] * myOrder.price);
+                emit TransferOrder('sell', escrowByUserAddress[msg.sender], myOrder.owner, _firstSymbol, quantitiesToFillPerOrder[i]);
+            }
+        }
+    }
 
     /// @notice To create a market order given a token pair, type of order, amount of tokens to trade and the price per token. If the type is buy, the price will
     /// determine how many _secondSymbol up until your _quantity or better if there are more profitable price. If the type if sell, the price will determine
@@ -156,13 +237,13 @@ contract DAX {
 
         require(firstSymbolAddress != address(0), 'The first symbol has not been whitelisted');
         require(secondSymbolAddress != address(0), 'The second symbol has not been whitelisted');
-        require(isTokenWhiteListed[_firstSymbol], 'The first symbol must be whitelisted to trade with it');
+        require(isTokenWhitelisted[_firstSymbol], 'The first symbol must be whitelisted to trade with it');
         require(isTokenSymbolWhitelisted[_secondSymbol], 'The second symbol must be whitelisted to trade with it');
         require(userEscrow != address(0), 'You must deposit some tokens before creating orders, use depositToken()');
         require(checkValidPair(_firstSymbol, _secondSymbol), 'The pair must be a valid pair');
 
-        order memory myOrder = Order(orderIdCounter, msg.sender, _type, _firstSymbol, _secondSymbol, _quantity, _pricePerToken, now, OrderState.OPEN);
-        orderById[orderIdCounter] = myOder;
+        Order memory myOrder = Order(orderIdCounter, msg.sender, _type, _firstSymbol, _secondSymbol, _quantity, _pricePerToken, now, OrderState.OPEN);
+        orderById[orderIdCounter] = myOrder;
 
         if(_type == 'buy'){
             // Check that the user has enough of the second symbol if he wants to buy the first symbol at that price
@@ -212,9 +293,9 @@ contract DAX {
         uint256 length = orders.length;
         uint256[] memory orderedIds = new uint256[](length);
         uint256 lastId = 0;
-        for(uint i = 0; i < length; j++){
+        for(uint i = 0; i < length; i++){
             if(orders[i].quantity > 0){
-                for(uint j = i+1; j < length; i++)
+                for(uint j = i+1; j < length; j++)
                 {
                     //if it's a buy order, sort from lowest to highest since we want the lowest proces first
                     if(_type == 'buy' && orders[i].price > orders[j].price)
@@ -224,7 +305,7 @@ contract DAX {
                         orders[j] = temporaryOrder;
                     }
                     // if it's a sell order, sort from highest to lowest since we want the highest sell prices first
-                    if(_type == 'sell' && order[i].price < orders[j].price){
+                    if(_type == 'sell' && orders[i].price < orders[j].price){
                         Order memory temporaryOrder = orders[i];
                         orders[i] == orders[j];
                         orders[j] == temporaryOrder;
@@ -240,12 +321,12 @@ contract DAX {
     /// @notice Checks if a pair is valid
     /// @param _firstSymbol The first symbol of the pair
     /// @param _secondSymbol The second symbol of a pair
-    /// @returns bool If the pair is valid or not
+    /// @return bool If the pair is valid or not
     function checkValidPair(bytes32 _firstSymbol, bytes32 _secondSymbol) public view returns(bool) {}
 
     /// @notice Returns the token pairs
     /// @param _token To get the array of token pair for that selected token
-    /// @returns bytes32[] An array containing the pairs
+    /// @return bytes32[] An array containing the pairs
     function getTokenPairs(bytes32 _token) public view returns(bytes32[] memory) {}
 
 }
