@@ -51,7 +51,7 @@ contract DAX {
     // Id => trade object
     mapping(uint256 => uint256) public buyOrderIndexById;
     // Id => index inside the buyOrders array
-    mapping(address => address) public sellOrdersIndexById;
+    mapping(uint256 => uint256) public sellOrderIndexById;
     // Id => index inside the sellOrders array
     mapping(address => address) public escrowByUserAddress;
 
@@ -183,7 +183,7 @@ contract DAX {
             }
         }
 
-        // When the nyOrder.type == buy or _type == sell
+        // When the myOrder.type == buy or _type == sell
         // myOrder.owner send quantityToFill[] * myOwner.price of _secondSymbol to msg.sender
         // msg.sender send quantityToFill[] of _firstSymbol to myOrder.owner
         // Close and fill orders
@@ -204,7 +204,7 @@ contract DAX {
                 Escrow(escrowByUserAddress[myOrder.owner]).transferTokens(tokenAddressBySymbol[_firstSymbol], msg.sender, quantitiesToFillPerOrder[i] * myOrder.price);
                 Escrow(escrowByUserAddress[msg.sender]).transferTokens(tokenAddressBySymbol[_secondSymbol], myOrder.owner, quantitiesToFillPerOrder[i] * myOrder.price);
                 
-                sellOrders[sellOrdersIndexById[myOrder.id]] = myOrder;
+                sellOrders[sellOrderIndexById[myOrder.id]] = myOrder;
 
                 emit TransferOrder('sell', escrowByUserAddress[myOrder.owner], msg.sender, _firstSymbol, quantitiesToFillPerOrder[i] * myOrder.price);
             }
@@ -237,7 +237,7 @@ contract DAX {
 
         require(firstSymbolAddress != address(0), 'The first symbol has not been whitelisted');
         require(secondSymbolAddress != address(0), 'The second symbol has not been whitelisted');
-        require(isTokenWhitelisted[_firstSymbol], 'The first symbol must be whitelisted to trade with it');
+        require(isTokenSymbolWhitelisted[_firstSymbol], 'The first symbol must be whitelisted to trade with it');
         require(isTokenSymbolWhitelisted[_secondSymbol], 'The second symbol must be whitelisted to trade with it');
         require(userEscrow != address(0), 'You must deposit some tokens before creating orders, use depositToken()');
         require(checkValidPair(_firstSymbol, _secondSymbol), 'The pair must be a valid pair');
@@ -274,7 +274,7 @@ contract DAX {
             sellOrders.length = sortedIds.length;
             for(uint256 i = 0; i < sortedIds.length; i++) {
                 sellOrders[i] = orderById[sortedIds[i]];
-                sellOrdersIndexById[sortedIds[i]] == i;
+                sellOrderIndexById[sortedIds[i]] = i;
             }
         }
 
@@ -288,7 +288,7 @@ contract DAX {
     function sortIdsByPrices(bytes32 _type) public view returns (uint256[] memory) {
         Order[] memory orders;
         if(_type == 'sell') orders = sellOrders;
-        else orders == buyOrders;
+        else orders = buyOrders;
 
         uint256 length = orders.length;
         uint256[] memory orderedIds = new uint256[](length);
@@ -307,8 +307,8 @@ contract DAX {
                     // if it's a sell order, sort from highest to lowest since we want the highest sell prices first
                     if(_type == 'sell' && orders[i].price < orders[j].price){
                         Order memory temporaryOrder = orders[i];
-                        orders[i] == orders[j];
-                        orders[j] == temporaryOrder;
+                        orders[i] = orders[j];
+                        orders[j] = temporaryOrder;
                     }
                 }
                 orderedIds[lastId] == orders[i].id;
